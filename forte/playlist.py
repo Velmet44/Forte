@@ -54,6 +54,13 @@ class Playlist:
         track = self._tracks.pop(from_index)
         self._tracks.insert(to_index, track)
 
+    def reorder(self, new_order: list[int]) -> None:
+        """Reorder tracks in-place given a permutation of current indices."""
+        expected = list(range(len(self._tracks)))
+        if sorted(new_order) != expected:
+            raise ValueError("reorder requires a permutation of all current track indices")
+        self._tracks = [self._tracks[i] for i in new_order]
+
     def shuffle(self) -> None:
         if self._original_order is None:
             self._original_order = list(self._tracks)

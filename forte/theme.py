@@ -30,7 +30,11 @@ LIGHT_THEME = {
 
 
 def build_stylesheet(theme: dict) -> str:
-    """Build a PyQt6 QSS stylesheet string from a colour-token dict."""
+    """Build a PyQt6 QSS stylesheet string from a colour-token dict.
+
+    All colours come exclusively from the supplied token dict so no UI file
+    needs to hardcode a hex value.
+    """
     return f"""
     QMainWindow, QWidget {{
         background-color: {theme['bg_base']};
@@ -38,36 +42,90 @@ def build_stylesheet(theme: dict) -> str:
         font-family: "Inter", "Segoe UI", sans-serif;
     }}
 
+    QWidget#titleBar {{
+        background-color: {theme['bg_panel']};
+        border-bottom: 1px solid {theme['border']};
+    }}
+    QLabel#titleLabel {{
+        color: {theme['text_primary']};
+        font-size: 12px;
+    }}
+    QPushButton#titleButton {{
+        background-color: transparent;
+        border: none;
+        color: {theme['text_secondary']};
+        font-size: 14px;
+        padding: 0 8px;
+    }}
+    QPushButton#titleButton:hover {{
+        color: {theme['accent']};
+    }}
+
+    QWidget#divider {{
+        background-color: {theme['border']};
+    }}
+
+    QWidget#statusBar {{
+        background-color: {theme['bg_panel']};
+        border-top: 1px solid {theme['border']};
+    }}
+    QLabel#statusLabel {{
+        color: {theme['text_secondary']};
+        font-size: 11px;
+    }}
+
     QListView {{
         background-color: {theme['bg_panel']};
         color: {theme['text_primary']};
-        border: 1px solid {theme['border']};
-        border-radius: 6px;
-        padding: 4px;
-    }}
-    QListView::item:selected {{
-        background-color: {theme['accent_dim']};
-        color: {theme['bg_base']};
-    }}
-    QListView::item:hover {{
-        background-color: {theme['bg_elevated']};
+        border: none;
+        border-radius: 0px;
+        padding: 0px;
     }}
 
     QScrollBar:vertical {{
         background-color: {theme['bg_scrubber']};
-        width: 10px;
-        border-radius: 5px;
+        width: 6px;
+        border: none;
+        margin: 0px;
     }}
     QScrollBar::handle:vertical {{
-        background-color: {theme['text_disabled']};
-        border-radius: 5px;
-        min-height: 24px;
+        background-color: {theme['border']};
+        border-radius: 3px;
+        min-height: 20px;
     }}
     QScrollBar::handle:vertical:hover {{
-        background-color: {theme['text_secondary']};
+        background-color: {theme['text_disabled']};
     }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+    QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{
         height: 0px;
+        width: 0px;
+    }}
+    QScrollBar::sub-page:vertical, QScrollBar::add-page:vertical {{
+        background: none;
+    }}
+
+    QScrollBar:horizontal {{
+        background-color: {theme['bg_scrubber']};
+        height: 6px;
+        border: none;
+        margin: 0px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background-color: {theme['border']};
+        border-radius: 3px;
+        min-width: 20px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background-color: {theme['text_disabled']};
+    }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+    QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {{
+        height: 0px;
+        width: 0px;
+    }}
+    QScrollBar::sub-page:horizontal, QScrollBar::add-page:horizontal {{
+        background: none;
     }}
 
     QPushButton {{
