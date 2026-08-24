@@ -186,4 +186,33 @@ def build_stylesheet(theme: dict) -> str:
         background-color: {theme['accent_dim']};
         color: {theme['bg_base']};
     }}
+
+    QSlider#volumeSlider {{
+        height: 16px;
+    }}
+    QSlider#volumeSlider::groove:horizontal {{
+        background-color: {theme['bg_scrubber']};
+        height: 4px;
+        border-radius: 2px;
+    }}
+    QSlider#volumeSlider::sub-page:horizontal {{
+        background-color: {theme['accent']};
+        height: 4px;
+        border-radius: 2px;
+    }}
+    QSlider#volumeSlider::add-page:horizontal {{
+        background-color: {theme['bg_scrubber']};
+        height: 4px;
+        border-radius: 2px;
+    }}
+    QSlider#volumeSlider::handle:horizontal {{
+        background-color: {theme['accent']};
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        margin: -4px 0;
+    }}
+    QSlider#volumeSlider::handle:horizontal:hover {{
+        background-color: {theme['accent_dim']};
+    }}
     """

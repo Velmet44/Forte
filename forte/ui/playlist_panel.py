@@ -424,3 +424,16 @@ class PlaylistPanel(QWidget):
         self.playlist.remove_track(index)
         self.model.refresh()
         self.playlist_changed.emit()
+
+    def remove_selected(self) -> None:
+        index = self.view.currentIndex()
+        if not index.isValid():
+            return
+        source = self.proxy.mapToSource(index)
+        self.remove_track(source.row())
+
+    def selected_source_row(self) -> int | None:
+        index = self.view.currentIndex()
+        if not index.isValid():
+            return None
+        return self.proxy.mapToSource(index).row()

@@ -24,6 +24,7 @@ class Player:
         self._ready = False
         self._error = ""
         try:
+            pygame.init()
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
             pygame.mixer.music.set_endevent(TRACK_ENDED)
             self._ready = True
@@ -55,6 +56,12 @@ class Player:
                 f"Unsupported audio format for {Path(filepath).name}: '{ext or 'no extension'}'"
             )
 
+    def _arm_endevent(self) -> None:
+        pygame.mixer.music.set_endevent(TRACK_ENDED)
+
+    def _disarm_endevent(self) -> None:
+        pygame.mixer.music.set_endevent(pygame.NOEVENT)
+
     def load(self, filepath: str) -> None:
         self._require_ready()
         self._check_format(filepath)
@@ -79,7 +86,9 @@ class Player:
             raise ValueError("No track loaded; call load() before play()")
         self._accumulated = self._start_offset
         self._play_start = time.perf_counter()
+        self._disarm_endevent()
         pygame.mixer.music.play(start=self._start_offset)
+        self._arm_endevent()
         self._state = "playing"
 
     def pause(self) -> None:
@@ -94,12 +103,15 @@ class Player:
         self._require_ready()
         if self._state != "paused":
             return
+        self._disarm_endevent()
         pygame.mixer.music.unpause()
+        self._arm_endevent()
         self._play_start = time.perf_counter()
         self._state = "playing"
 
     def stop(self) -> None:
         self._require_ready()
+        self._disarm_endevent()
         pygame.mixer.music.stop()
         self._state = "stopped"
         self._accumulated = 0.0
@@ -115,9 +127,11 @@ class Player:
         self._accumulated = seconds
         self._start_offset = seconds
 
+        self._disarm_endevent()
         pygame.mixer.music.stop()
         pygame.mixer.music.load(self._filepath)
         pygame.mixer.music.play(start=seconds)
+        self._arm_endevent()
         try:
             pygame.mixer.music.set_pos(seconds)
         except pygame.error:
