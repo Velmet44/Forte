@@ -163,6 +163,16 @@ def build_stylesheet(theme: dict) -> str:
         color: {theme['text_primary']};
     }}
 
+    QLabel#nowTitle {{
+        color: {theme['text_primary']};
+    }}
+    QLabel#nowArtist {{
+        color: {theme['text_secondary']};
+    }}
+    QLabel#nowAlbum {{
+        color: {theme['text_secondary']};
+    }}
+
     QLineEdit {{
         background-color: {theme['bg_elevated']};
         color: {theme['text_primary']};

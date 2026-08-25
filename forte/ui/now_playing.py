@@ -386,16 +386,15 @@ class NowPlayingPanel(QWidget):
         self._title = QLabel("Track Title")
         self._title.setObjectName("nowTitle")
         self._title.setFont(QFont("Inter", 18, QFont.Weight.Bold))
-        self._title.setStyleSheet(f"color: {self.theme['text_primary']};")
         self._title.setTextFormat(Qt.TextFormat.PlainText)
 
         self._artist = QLabel("Artist")
+        self._artist.setObjectName("nowArtist")
         self._artist.setFont(QFont("Inter", 13))
-        self._artist.setStyleSheet(f"color: {self.theme['text_secondary']};")
 
         self._album = QLabel("Album · Year")
+        self._album.setObjectName("nowAlbum")
         self._album.setFont(QFont("Inter", 12))
-        self._album.setStyleSheet(f"color: {self.theme['text_secondary']};")
 
         info_layout.addStretch(1)
         info_layout.addWidget(self._title)

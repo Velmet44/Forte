@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
         if not self.player.available:
             self._set_status("No audio device — playback disabled")
         else:
+            self.player.set_crossfade(session.get("crossfade", 0))
             self.now_playing.set_volume(self._prev_volume)
 
     def _build_title_bar(self) -> None:

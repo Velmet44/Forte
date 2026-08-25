@@ -21,8 +21,8 @@ Forte is developed in stages. The playback engine, playlist, and main window wer
 
 ## Roadmap / not yet implemented
 
-- Settings dialog (currently a stub; launch hook wired to a no-op).
-- Visualizer rendering in the UI.
+- Settings dialog (currently a stub; launch hook wired to a no-op). The persisted `crossfade` value is already honoured on playback as a fade-in, but there is no UI to change it yet.
+- Visualizer rendering in the UI (`forte/visualizer.py` exists and is unused — the signature waveform-in-scrubber feature is not yet drawn).
 
 ## Requirements
 

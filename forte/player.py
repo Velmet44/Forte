@@ -39,6 +39,7 @@ class Player:
         self._start_offset: float = 0.0
         self._play_start: float = 0.0
         self._volume: float = 1.0
+        self._crossfade: float = 0.0
 
     @property
     def available(self) -> bool:
@@ -87,9 +88,22 @@ class Player:
         self._accumulated = self._start_offset
         self._play_start = time.perf_counter()
         self._disarm_endevent()
-        pygame.mixer.music.play(start=self._start_offset)
+        fade_ms = int(self._crossfade * 1000)
+        if fade_ms > 0:
+            pygame.mixer.music.play(start=self._start_offset, fade_ms=fade_ms)
+        else:
+            pygame.mixer.music.play(start=self._start_offset)
         self._arm_endevent()
         self._state = "playing"
+
+    def set_crossfade(self, seconds: float) -> None:
+        """Set the crossfade duration (seconds) used as a fade-in on play.
+
+        pygame.mixer supports a single music stream, so true overlap
+        crossfading is not possible; the value is applied as a fade-in at the
+        start of each track to soften transitions.
+        """
+        self._crossfade = max(0.0, min(10.0, float(seconds)))
 
     def pause(self) -> None:
         self._require_ready()
