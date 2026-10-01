@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from forte.metadata import TrackMetadata
 from forte.playlist import Playlist
+from forte.state import SessionState
 
 _AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".ogg", ".m4a"}
 _MIME = "application/x-forte-track"
@@ -185,7 +186,7 @@ class TrackDelegate(QStyledItemDelegate):
         is_hovered = bool(state & QStyle.StateFlag.State_MouseOver)
         is_playing = bool(index.data(IS_PLAYING))
 
-        bg = self.theme["bg_base"]
+        bg = self.theme["bg_panel"]
         if is_selected or is_hovered:
             bg = self.theme["bg_elevated"]
         painter.fillRect(rect, QColor(bg))
@@ -205,6 +206,11 @@ class TrackDelegate(QStyledItemDelegate):
         )
 
         title = index.data(TITLE) or ""
+        if getattr(self, "_show_ext", False):
+            filepath = index.data(FILEPATH) or ""
+            ext = Path(filepath).suffix
+            if ext:
+                title = f"{title}{ext}"
         title_font = QFont("Inter", 11)
         fm = QFontMetrics(title_font)
         title_rect = QRect(rect.x() + 40, rect.y(), rect.width() - 40 - 56, rect.height())
@@ -284,11 +290,20 @@ class PlaylistPanel(QWidget):
     track_selected = pyqtSignal(int)
     playlist_changed = pyqtSignal()
     play_next = pyqtSignal(int)
+    recently_played_selected = pyqtSignal(str)
 
-    def __init__(self, playlist: Playlist, theme: dict, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        playlist: Playlist,
+        theme: dict,
+        state: SessionState | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.playlist = playlist
         self.theme = theme
+        self.state = state
+        self._show_extensions = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -308,6 +323,7 @@ class PlaylistPanel(QWidget):
         self.view = PlaylistView(self.theme)
         self.view.setModel(self.proxy)
         self.delegate = TrackDelegate(self.theme)
+        self.delegate._show_ext = self._show_extensions
         self.view.setItemDelegate(self.delegate)
         self.view.doubleClicked.connect(self._on_double_click)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -344,6 +360,11 @@ class PlaylistPanel(QWidget):
     def set_current_track(self, index: int) -> None:
         self.model.set_current(index)
 
+    def set_show_extensions(self, show: bool) -> None:
+        self._show_extensions = bool(show)
+        self.delegate._show_ext = self._show_extensions
+        self.model.refresh()
+
     def _on_search(self, text: str) -> None:
         self.proxy.setFilterFixedString(text)
 
@@ -364,6 +385,22 @@ class PlaylistPanel(QWidget):
         act_remove = menu.addAction("Remove")
         menu.addSeparator()
         act_explorer = menu.addAction("Show in Explorer")
+
+        if self.state is not None:
+            recent = self.state.get_recently_played()[:10]
+            if recent:
+                sub = QMenu("Recently Played", menu)
+                for path in recent:
+                    label = Path(path).name
+                    if len(label) > 40:
+                        label = label[:37] + "..."
+                    act = sub.addAction(label)
+                    act.setData(path)
+                sub.triggered.connect(
+                    lambda a: self.recently_played_selected.emit(a.data() or "")
+                )
+                menu.addSeparator()
+                menu.addMenu(sub)
 
         choice = menu.exec(self.view.viewport().mapToGlobal(point))
         if choice == act_play_next:

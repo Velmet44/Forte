@@ -15,6 +15,7 @@ _DEFAULTS = {
     "theme": "dark",
     "crossfade": 0,
     "minimise_to_tray": True,
+    "show_extensions": False,
     "recently_played": [],
 }
 
@@ -60,6 +61,8 @@ class SessionState:
             data["recently_played"] = []
         if not isinstance(data["last_playlist"], list):
             data["last_playlist"] = []
+        if not isinstance(data.get("show_extensions"), bool):
+            data["show_extensions"] = False
         return data
 
     def save(self, data: dict) -> None:
@@ -76,3 +79,6 @@ class SessionState:
         recent.insert(0, filepath)
         data["recently_played"] = recent[:20]
         self.save(data)
+
+    def get_recently_played(self) -> list[str]:
+        return list(self.load().get("recently_played", []))

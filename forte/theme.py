@@ -15,16 +15,16 @@ DARK_THEME = {
 }
 
 LIGHT_THEME = {
-    "bg_base":        "#F5F3EF",
-    "bg_panel":       "#ECEAE6",
-    "bg_elevated":    "#E0DDD8",
-    "bg_scrubber":    "#DDDAD5",
-    "accent":         "#E8A838",
-    "accent_dim":     "#C48A22",
-    "text_primary":   "#1A1A1E",
-    "text_secondary": "#6A6866",
-    "text_disabled":  "#B0ADA8",
-    "border":         "#CCCAC6",
+    "bg_base":        "#FBFAF7",
+    "bg_panel":       "#F1EFEA",
+    "bg_elevated":    "#FFFFFF",
+    "bg_scrubber":    "#E4E1DA",
+    "accent":         "#D9821B",
+    "accent_dim":     "#B66E10",
+    "text_primary":   "#211F1B",
+    "text_secondary": "#6E6A61",
+    "text_disabled":  "#ABA69B",
+    "border":         "#DEDAD1",
     "danger":         "#C0392B",
 }
 
@@ -143,6 +143,24 @@ def build_stylesheet(theme: dict) -> str:
         background-color: {theme['accent']};
     }}
     QPushButton:disabled {{
+        color: {theme['text_disabled']};
+    }}
+
+    QPushButton#iconButton {{
+        background-color: transparent;
+        border: none;
+        padding: 0px;
+    }}
+    QPushButton#iconButton:hover {{
+        background-color: transparent;
+        color: {theme['text_primary']};
+    }}
+    QPushButton#iconButton:pressed {{
+        background-color: transparent;
+        border: none;
+    }}
+    QPushButton#iconButton:disabled {{
+        background-color: transparent;
         color: {theme['text_disabled']};
     }}
 

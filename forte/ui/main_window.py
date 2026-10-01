@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pygame
+from pathlib import Path
 from PyQt6.QtCore import Qt, QPoint, QEvent, QTimer
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -12,16 +13,17 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QFileDialog,
-    QSystemTrayIcon,
 )
 
 from forte.player import Player, TRACK_ENDED
 from forte.playlist import Playlist
 from forte.metadata import read_metadata, _format_duration, TrackMetadata
 from forte.state import SessionState
+from forte.visualizer import VisualizerEngine
+from forte.theme import DARK_THEME, LIGHT_THEME, build_stylesheet
 from forte.ui.now_playing import NowPlayingPanel
 from forte.ui.playlist_panel import PlaylistPanel
-from forte.ui.tray import Tray
+from forte.ui.tray import ForteTray
 
 
 class MainWindow(QMainWindow):
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
         self._positions: dict[str, float] = {}
         self._drag_pos: QPoint | None = None
         self._title_buttons: list[QPushButton] = []
+        self._quitting = False
 
         self.repeat: str = session.get("repeat", "off")
         self.shuffle: bool = session.get("shuffle", False)
@@ -68,14 +71,16 @@ class MainWindow(QMainWindow):
 
         self._connect_signals()
         self._setup_shortcuts()
-        self._restore_session()
+        self._setup_visualizer()
         self._setup_tray()
+        self._restore_session()
         self._start_timers()
 
         if not self.player.available:
             self._set_status("No audio device — playback disabled")
         else:
             self.player.set_crossfade(session.get("crossfade", 0))
+            self.player.set_volume(self._prev_volume)
             self.now_playing.set_volume(self._prev_volume)
 
     def _build_title_bar(self) -> None:
@@ -118,8 +123,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.playlist_panel = PlaylistPanel(self.playlist, self.theme)
+        self.playlist_panel = PlaylistPanel(self.playlist, self.theme, self.state)
         self.playlist_panel.setFixedWidth(260)
+        self.playlist_panel.set_show_extensions(self.session.get("show_extensions", False))
 
         divider = QWidget()
         divider.setObjectName("divider")
@@ -147,6 +153,7 @@ class MainWindow(QMainWindow):
         self.playlist_panel.track_selected.connect(self._on_track_selected)
         self.playlist_panel.playlist_changed.connect(self._on_playlist_changed)
         self.playlist_panel.play_next.connect(self._on_play_next)
+        self.playlist_panel.recently_played_selected.connect(self._on_recently_played)
 
         self.now_playing.play_requested.connect(self._on_play)
         self.now_playing.pause_requested.connect(self._on_pause)
@@ -172,6 +179,13 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Delete"), self).activated.connect(self._on_remove_selected)
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._save_playlist)
 
+    def _setup_visualizer(self) -> None:
+        # No parent: the engine lives in its own worker thread (moveToThread
+        # forbids a parent at move time). MainWindow keeps the reference and
+        # stops the thread on quit.
+        self.visualizer = VisualizerEngine()
+        self.visualizer.bars_ready.connect(self.now_playing._scrubber.update_bars)
+
     def _start_timers(self) -> None:
         self._progress_timer = QTimer(self)
         self._progress_timer.setInterval(200)
@@ -182,6 +196,11 @@ class MainWindow(QMainWindow):
         self._event_timer.setInterval(500)
         self._event_timer.timeout.connect(self._poll_events)
         self._event_timer.start()
+
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(30000)
+        self._autosave_timer.timeout.connect(self._save_session)
+        self._autosave_timer.start()
 
     def _index_of(self, filepath: str) -> int:
         for i, track in enumerate(self.playlist):
@@ -208,11 +227,15 @@ class MainWindow(QMainWindow):
             if not filepath:
                 continue
             self._positions[filepath] = position
+            path = Path(filepath)
+            if not path.is_file():
+                print(f"[forte] skipping missing file from session: {filepath}")
+                continue
             try:
                 self.playlist.add_track(filepath)
             except Exception:
                 track = TrackMetadata(
-                    title=title or Path(filepath).stem,
+                    title=title or path.name,
                     artist=artist,
                     album=album,
                     duration=duration,
@@ -263,7 +286,20 @@ class MainWindow(QMainWindow):
         self.now_playing.set_position(target)
         self.now_playing.set_playing(False)
         self._set_status(f"Loaded: {track.title} — {track.artist}")
+        self.visualizer.request_track.emit(track.filepath, track.duration)
+        self.visualizer.request_playing.emit(False)
         self._refresh_tray()
+
+    def _start_playback(self, track: TrackMetadata, resume: bool = False) -> None:
+        self.player.load(track.filepath)
+        self.player.play()
+        if resume:
+            saved = self._positions.get(track.filepath, 0.0)
+            if saved > 3.0:
+                target = max(0.0, saved - 3.0)
+                self.player.seek(target)
+                self.now_playing.set_position(target)
+        self.now_playing.set_playing(True)
 
     def _play_index(self, index: int, resume: bool = False) -> None:
         if not 0 <= index < len(self.playlist):
@@ -279,21 +315,28 @@ class MainWindow(QMainWindow):
         self.now_playing.set_duration(track.duration)
         self._set_status(f"Now Playing: {track.title} — {track.artist}")
         self._loaded_path = track.filepath
+        self.state.add_recently_played(track.filepath)
+
         if not self.player.available:
             self.now_playing.set_playing(False)
+            self.visualizer.request_track.emit(track.filepath, track.duration)
+            self.visualizer.request_playing.emit(False)
+            self._refresh_tray()
             return
-        try:
-            self.player.load(track.filepath)
-            self.player.play()
-            if resume:
-                saved = self._positions.get(track.filepath, 0.0)
-                if saved > 3.0:
-                    target = max(0.0, saved - 3.0)
-                    self.player.seek(target)
-                    self.now_playing.set_position(target)
-            self.now_playing.set_playing(True)
-        except Exception:
-            self.now_playing.set_playing(False)
+
+        crossfade = self.player._crossfade
+        can_crossfade = crossfade > 0.0 and (self.player.is_playing() or self.player.using_channel)
+        if can_crossfade:
+            try:
+                self.player.crossfade_play(track.filepath)
+                self.now_playing.set_playing(True)
+            except Exception:
+                self._start_playback(track, resume=resume)
+        else:
+            self._start_playback(track, resume=resume)
+
+        self.visualizer.request_track.emit(track.filepath, track.duration)
+        self.visualizer.request_playing.emit(True)
         self._refresh_tray()
 
     def _next_track(self) -> None:
@@ -308,6 +351,7 @@ class MainWindow(QMainWindow):
                     self.player.stop()
                 self.now_playing.set_playing(False)
                 self.now_playing.set_position(0)
+                self._sync_media_state()
                 return
         self._play_index(n)
 
@@ -344,6 +388,7 @@ class MainWindow(QMainWindow):
                     self.player.stop()
                 self.now_playing.set_playing(False)
                 self.now_playing.set_position(0)
+        self._sync_media_state()
         self._refresh_tray()
 
     def _on_play(self) -> None:
@@ -360,13 +405,13 @@ class MainWindow(QMainWindow):
             self.now_playing.set_playing(True)
         except Exception:
             self.now_playing.set_playing(False)
-        self._refresh_tray()
+        self._sync_media_state()
 
     def _on_pause(self) -> None:
         if self.player.available:
             self.player.pause()
         self.now_playing.set_playing(False)
-        self._refresh_tray()
+        self._sync_media_state()
 
     def _on_space(self) -> None:
         if self.player.is_playing():
@@ -453,6 +498,7 @@ class MainWindow(QMainWindow):
             self.now_playing.set_position(0)
             self._loaded_path = None
         self.playlist_panel.set_current_track(self.current_index)
+        self._sync_media_state()
 
     def _on_play_next(self, index: int) -> None:
         if self.current_index < 0 or not 0 <= index < len(self.playlist):
@@ -463,6 +509,24 @@ class MainWindow(QMainWindow):
         self.playlist.move_track(index, dest)
         self.playlist_panel.model.refresh()
         self.playlist_panel.playlist_changed.emit()
+
+    def _on_recently_played(self, filepath: str) -> None:
+        if not filepath:
+            return
+        if not Path(filepath).is_file():
+            print(f"[forte] recently played file no longer exists: {filepath}")
+            return
+        index = self._index_of(filepath)
+        if index < 0:
+            try:
+                self.playlist.add_track(filepath)
+            except Exception:
+                return
+            self.playlist_panel.model.refresh()
+            self.playlist_panel.playlist_changed.emit()
+            index = self._index_of(filepath)
+        if index >= 0:
+            self._play_index(index)
 
     def _save_playlist(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save Playlist", "", "M3U8 (*.m3u8)")
@@ -478,6 +542,7 @@ class MainWindow(QMainWindow):
         self.now_playing.set_position(pos)
         if self._loaded_path:
             self._positions[self._loaded_path] = pos
+        self.visualizer.request_position.emit(pos)
 
     def _poll_events(self) -> None:
         if not self.player.available:
@@ -487,35 +552,48 @@ class MainWindow(QMainWindow):
                 self._on_track_ended()
         except pygame.error:
             pass
+        if self.player.using_channel and self.player.poll_end():
+            self._on_track_ended()
 
     def _setup_tray(self) -> None:
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            self.tray = None
-            return
         accent = self.theme.get("accent", "#E8A838")
-        self.tray = Tray(accent, self)
-        self.tray.toggle_requested.connect(self._on_space)
+        self.tray = ForteTray(accent, None, self)
+        self.tray.toggle_requested.connect(self._toggle_window)
+        self.tray.show_requested.connect(self._restore_window)
         self.tray.next_requested.connect(self._next_track)
         self.tray.prev_requested.connect(self._prev_track)
-        self.tray.restore_requested.connect(self._restore_window)
+        self.tray.playpause_requested.connect(self._on_space)
         self.tray.quit_requested.connect(self._quit_app)
         self.tray.show()
         self._refresh_tray()
 
+    def _sync_media_state(self) -> None:
+        playing = self.player.is_playing()
+        self.visualizer.request_playing.emit(playing)
+        if getattr(self, "tray", None) is not None:
+            self.tray.set_playing(playing)
+
     def _refresh_tray(self) -> None:
-        if not getattr(self, "tray", None):
+        if getattr(self, "tray", None) is None:
             return
         if 0 <= self.current_index < len(self.playlist):
             track = self.playlist[self.current_index]
-            symbol = "▶" if self.now_playing._playing else "⏸"
-            self.tray.set_now_playing(f"Forte — {symbol} {track.title} — {track.artist}")
+            self.tray.set_now_playing(track.title, track.artist)
+            self.tray.set_playing(self.now_playing._playing)
         else:
-            self.tray.set_now_playing("Forte — no track loaded")
+            self.tray.set_now_playing("", "")
+            self.tray.set_playing(False)
 
     def _restore_window(self) -> None:
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def _toggle_window(self) -> None:
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
+        else:
+            self._restore_window()
 
     def _minimise(self) -> None:
         if self.session.get("minimise_to_tray", True):
@@ -524,13 +602,47 @@ class MainWindow(QMainWindow):
             self.showMinimized()
 
     def _open_settings(self) -> None:
-        # Settings dialog is implemented in a later stage.
-        pass
+        from forte.ui.settings import SettingsDialog
+
+        current = {
+            "theme": self.session.get("theme", "dark"),
+            "crossfade": self.session.get("crossfade", 0),
+            "minimise_to_tray": self.session.get("minimise_to_tray", True),
+            "show_extensions": self.session.get("show_extensions", False),
+        }
+        dialog = SettingsDialog(current, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        values = dialog.values()
+        if values["theme"] != self.session.get("theme"):
+            self._apply_theme(values["theme"])
+
+        self.player.set_crossfade(values["crossfade"])
+        self.session["crossfade"] = values["crossfade"]
+        self.session["minimise_to_tray"] = values["minimise_to_tray"]
+        self.session["show_extensions"] = values["show_extensions"]
+        self.playlist_panel.set_show_extensions(values["show_extensions"])
+        self._save_session()
+
+    def _apply_theme(self, name: str) -> None:
+        theme = LIGHT_THEME if name == "light" else DARK_THEME
+        self.theme = theme
+        self.session["theme"] = name
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(build_stylesheet(theme))
+        self.playlist_panel.theme = theme
+        self.playlist_panel.model.refresh()
+        self.now_playing.set_theme(theme)
 
     def _quit_app(self) -> None:
+        self._quitting = True
         if getattr(self, "tray", None) is not None:
             self.tray.hide()
         self._save_session()
+        if getattr(self, "visualizer", None) is not None:
+            self.visualizer.stop()
         QApplication.quit()
 
     def eventFilter(self, obj, event) -> bool:
@@ -545,8 +657,14 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:
-        if getattr(self, "tray", None) is not None:
-            self.tray.hide()
+        if getattr(self, "_quitting", False):
+            self._save_session()
+            event.accept()
+            return
+        if self.session.get("minimise_to_tray", True) and self.tray.available:
+            event.ignore()
+            self.hide()
+            return
         self._save_session()
         event.accept()
 

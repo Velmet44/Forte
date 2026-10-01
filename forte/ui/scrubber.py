@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtProperty, QPropertyAnimation, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPainterPath
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QLinearGradient
 from PyQt6.QtWidgets import QWidget
 
 
@@ -13,6 +13,8 @@ def _format_time(seconds: float) -> str:
 
 _SIDE = 48
 _LABEL_W = 44
+_N_BARS = 40
+_BAR_MAX_H = 20
 
 
 class ScrubberWidget(QWidget):
@@ -30,6 +32,7 @@ class ScrubberWidget(QWidget):
         self._hovered = False
         self._seeking = False
         self._thumb_opacity = 0.0
+        self._bars = [0.0] * _N_BARS
 
         self._anim = QPropertyAnimation(self, b"thumb_opacity")
         self._anim.setDuration(100)
@@ -51,10 +54,45 @@ class ScrubberWidget(QWidget):
         self._position = max(0.0, seconds)
         self.update()
 
+    def update_bars(self, bars: list[float]) -> None:
+        """Store the latest visualizer bar values and repaint."""
+        values = [max(0.0, min(1.0, float(b))) for b in bars]
+        if len(values) != len(self._bars):
+            self._bars = values
+        else:
+            self._bars = values
+        self.update()
+
     def _ratio(self) -> float:
         if self._duration <= 0:
             return 0.0
         return min(1.0, max(0.0, self._position / self._duration))
+
+    def _paint_bars(self, painter: QPainter, x0: float, width: float, centre_y: float) -> None:
+        if not self._bars or width <= 0:
+            return
+        pad = 2.0
+        usable = width - 2 * pad
+        if usable <= 0:
+            return
+        slot = usable / len(self._bars)
+        bar_w = max(1.0, slot - 1.0)
+        accent = QColor(self.theme["accent"])
+        for i, value in enumerate(self._bars):
+            if value <= 0.001:
+                continue
+            x = x0 + pad + i * slot
+            h = value * _BAR_MAX_H
+            grad = QLinearGradient(0, centre_y, 0, centre_y - h)
+            top = QColor(accent)
+            top.setAlphaF(min(1.0, value))
+            base = QColor(accent)
+            base.setAlphaF(min(1.0, value) * 0.15)
+            grad.setColorAt(0.0, base)
+            grad.setColorAt(1.0, top)
+            painter.setBrush(grad)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(QRectF(x, centre_y - h, bar_w, h))
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -72,6 +110,8 @@ class ScrubberWidget(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(self.theme["bg_scrubber"]))
         painter.drawRoundedRect(QRectF(bar_x0, track_top, bar_w, track_h), 1.5, 1.5)
+
+        self._paint_bars(painter, bar_x0, bar_w, centre_y)
 
         ratio = self._ratio()
         if self._duration > 0:

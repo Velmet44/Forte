@@ -68,6 +68,7 @@ class IconButton(QPushButton):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("iconButton")
         self._icon = icon
         self._size = size
         self._theme = theme
@@ -532,6 +533,25 @@ class NowPlayingPanel(QWidget):
 
     def get_volume(self) -> float:
         return self._volume
+
+    def set_theme(self, theme: dict) -> None:
+        self.theme = theme
+        self._art.theme = theme
+        for btn in (
+            self._prev,
+            self._back10,
+            self._play,
+            self._fwd10,
+            self._next,
+            self._shuffle,
+            self._repeat,
+            self._volume_icon,
+        ):
+            btn._theme = theme
+            btn.update()
+        self._scrubber.theme = theme
+        self._scrubber.update()
+        self.update()
 
 
 def _year_from_meta(meta) -> str:
